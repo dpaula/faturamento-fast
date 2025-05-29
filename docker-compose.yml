@@ -1,0 +1,20 @@
+version: '3'
+services:
+
+  faturamento-fast:
+    build:
+      dockerfile: ./dockerfile
+      context: .
+    image: portoitapoa/faturamento-fast:${IMAGE:-2.41.66}
+    environment:
+      - PROFILE=--spring.profiles.active=staging
+      - PORT=2179
+    ports:
+      - 2179:2179
+    restart: always
+    networks:
+      - infra_ms-network
+
+networks:
+  infra_ms-network:
+    external: true

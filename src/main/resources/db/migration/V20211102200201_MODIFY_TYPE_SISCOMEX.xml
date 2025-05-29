@@ -1,0 +1,11 @@
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext" xmlns:pro="http://www.liquibase.org/xml/ns/pro" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd http://www.liquibase.org/xml/ns/pro http://www.liquibase.org/xml/ns/pro/liquibase-pro-4.1.xsd http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+    <changeSet id="V20211102200201-1" author="alexandre.m.souza.jr">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="siscomexDadosInformados_novo" columnName="dataFaturamento" />
+        </preConditions>
+        <modifyDataType
+                tableName="siscomexDadosInformados_novo"
+                columnName="dataFaturamento"
+                newDataType="date" />
+    </changeSet>
+</databaseChangeLog>

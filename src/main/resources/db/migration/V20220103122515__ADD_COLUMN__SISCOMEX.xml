@@ -1,0 +1,38 @@
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext" xmlns:pro="http://www.liquibase.org/xml/ns/pro" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd http://www.liquibase.org/xml/ns/pro http://www.liquibase.org/xml/ns/pro/liquibase-pro-4.1.xsd http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+    <changeSet id="V20220103122515-1" author="alan.f">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="siscomexDadosInformados_novo" columnName="crossdocking" />
+            </not>
+        </preConditions>
+        <addColumn tableName="siscomexDadosInformados_novo">
+            <column  defaultValue="0" name="crossdocking" type="bit"/>
+        </addColumn>
+    </changeSet>
+    <changeSet id="V20220103122515-2" author="alan.f">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="siscomexDadosInformados" columnName="crossdocking" />
+            </not>
+        </preConditions>
+        <addColumn tableName="siscomexDadosInformados">
+            <column defaultValue="0" name="crossdocking" type="bit"/>
+        </addColumn>
+    </changeSet>
+    <changeSet id="V20220103122515-3" author="alan.f">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="siscomexDadosInformados" columnName="crossdocking" />
+        </preConditions>
+        <update tableName="siscomexDadosInformados">
+            <column name="crossdocking" value="0" />
+        </update>
+    </changeSet>
+    <changeSet id="V20220103122515-4" author="alan.f">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="siscomexDadosInformados_novo" columnName="crossdocking" />
+        </preConditions>
+        <update tableName="siscomexDadosInformados_novo">
+            <column name="crossdocking" value="0" />
+        </update>
+    </changeSet>
+</databaseChangeLog>

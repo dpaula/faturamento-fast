@@ -1,0 +1,273 @@
+#----------------------------------------------------
+#                      Variáveis
+#----------------------------------------------------
+variables:
+  FF_GITLAB_REGISTRY_HELPER_IMAGE: "true"
+  CONTAINER_NAME: "faturamento-fast"
+  DOCKERFILE_DEV: "dockerfile"
+  DOCKERFILE_PROD: "dockerfile"
+  MAVEN_OPTS: "-Djava.awt.headless=true -Dmaven.repo.local=./.m2/repository"
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
+  DOCKER_REGISTRY: "docker.io"
+  RUNNER: "gitlab-org-docker"
+
+#----------------------------------------------------
+#                      Estágios
+#----------------------------------------------------
+stages:
+  # Estágio de compilação do código java (executa em todo os commits para branchs que possuam o nome feature)
+  - Compiling
+  # Estágio para realizar todas as migrations do banco de dados
+  #- Migration
+  # Etapa de teste do código (executa em todo os commits para branchs que possuam o nome feature)
+  - Testing
+  # Abertura do Merge Request para a branch develop (executa em todo os commits para branchs que possuam o nome feature)
+  - Merge Request Develop
+  # Avaliação das boas práticas na construção do Dockerfile (apenas informativo, não quebrará o CI)
+  - Lint Dockerfile
+  # Build da imagem docker e envio para o Docker Hub com a tag de develop (executa em todos os commits para a branch develop)
+  - Develop
+  # Scan de vulnerabilidades da imagem (executa em todos os commits para a branch develop)
+  - Image Scan
+  # Abertura do Merge Request para a branch staging (executa em todo os commits para a branch staging)
+  - Merge Request Staging
+  # Build da imagem docker e envio para o Docker Hub com a tag de staging (executa em todos os commits para a branch staging)
+  - Staging
+  # Abertura do Merge Request para a branch main (executa em todo os commits para a branch main)
+  - Merge Request Production
+  # Lint do dockerfile para geração da imagem nativa
+  - Lint Dockerfile Prod
+  # Estágio para realizar todas as migrations do banco de dados
+  #- Migration Prod
+  # build prod
+  - Production
+
+#----------------------------------------------------
+#            Padrões para todos os Estágios
+#----------------------------------------------------
+default:
+  tags:
+    - $RUNNER
+  cache:
+    key: $CONTAINER_NAME
+    paths:
+      - "./.m2/repository"
+      - "target/"
+      - "image-develop/"
+      - "image-staging/"
+
+before_script:
+  - echo " ------------------------------- Global > Before Script -------------------------------"
+  - echo $CI_COMMIT_BRANCH
+
+#----------------------------------------------------
+#                Estágio de Compilação
+#----------------------------------------------------
+compiling:
+  stage: Compiling
+  image: maven:3.8.3-openjdk-17-slim
+  only:
+    - /^feature\/*/
+    - /^hotfix\/*/
+    - develop
+  before_script:
+    - ls -la
+  script:
+    - mvn package -DskipTests
+
+#----------------------------------------------------
+#                 Estágio de Migrations
+#----------------------------------------------------
+#migration:
+#  stage: Migration
+#  image: maven:3.8.3-openjdk-17-slim
+#  needs:
+#    - compiling
+#  only:
+#    - /^feature\/*/
+#    - /^hotfix\/*/
+#  script:
+#    - mvn liquibase:update -Dliquibase.url=$DATABASE_URL -Dliquibase.username=$DATABASE_USER -Dliquibase.password=$DATABASE_PASSWORD -Dliquibase.promptOnNonLocalDatabase=false
+
+
+#----------------------------------------------------
+#                 Estágio de Testes
+#----------------------------------------------------
+testing:
+  stage: Testing
+  image: maven:3.8.3-openjdk-17-slim
+#  needs:
+#    - migration
+  only:
+    - /^feature\/*/
+    - /^hotfix\/*/
+  script:
+    - "mvn package $MAVEN_CLI_OPTS"
+
+#----------------------------------------------------
+#       Criação do Merge - feature --> Develop
+#----------------------------------------------------
+merge-request-develop:
+  stage: Merge Request Develop
+  image: registry.gitlab.com/gitlab-automation-toolkit/gitlab-auto-mr
+  needs:
+    - testing
+  only:
+    - /^feature\/*/
+    - /^hotfix\/*/
+  before_script: []
+  script:
+    - gitlab_auto_mr -t develop -r -c WIP -d .gitlab/merge_request_templates/merge_request.md --title 'DEPLOY DEVELOP'
+
+#----------------------------------------------------
+#           Estágio de Lint do Dockerfile
+#----------------------------------------------------
+lint_dockerfile:
+  stage: Lint Dockerfile
+  image: hadolint/hadolint:latest-debian
+  only:
+    - develop
+  allow_failure: true
+  script:
+    - hadolint --verbose src/main/docker/Dockerfile.jvm
+    # o retorno do hadolint será no própio log do pipeline do Gitlab
+
+#----------------------------------------------------
+#            Estágio de Build da Imagem
+#----------------------------------------------------
+image-build-develop:
+  stage: Develop
+  image: quay.io/buildah/stable:latest
+  needs:
+    - lint_dockerfile
+  only:
+    - develop
+  script:
+    # Login no registry (Docker Hub) da Itapoá
+    - buildah login -u $DOCKER_USER -p $DOCKER_PASSWORD docker.io
+    # Exporta a variável com o nome final da imagem
+    - export DOCKER_IMAGE="$DOCKER_REGISTRY/portoitapoa/$CONTAINER_NAME:develop-$CI_COMMIT_SHORT_SHA-$(date --utc +%Y%m%d%H%M%S)"
+    # Build da imagem
+    - buildah bud --format=docker -f $DOCKERFILE_DEV -t $CONTAINER_NAME .
+    # Envio da imagem para o registry (Docker Hub)
+    - buildah push --creds=$DOCKER_USER:$DOCKER_PASSWORD $CONTAINER_NAME docker://$DOCKER_IMAGE
+    # Tagueamento da imagem para o cache e os subsequentes jobs
+    - buildah tag $CONTAINER_NAME image-develop:latest
+    # Conversão da imagem para o formato OCI para o Scan de vulnerabilidades e o tagueamento para staging
+    - buildah push $CONTAINER_NAME oci:image-develop:latest
+  environment:
+    name: develop
+
+# #----------------------------------------------------
+# #               Estágio Scan da Imagem
+# #----------------------------------------------------
+scan-image:
+  stage: Image Scan
+  image: docker:stable
+  needs:
+    - image-build-develop
+  only:
+    - develop
+  services:
+    - name: docker:dind
+      entrypoint: ["env", "-u", "DOCKER_HOST"]
+      command: ["dockerd-entrypoint.sh"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375/
+    DOCKER_DRIVER: overlay2
+    # See https://github.com/docker-library/docker/pull/166
+    DOCKER_TLS_CERTDIR: ""
+    IMAGE: trivy-ci-test:$CI_COMMIT_SHA
+  before_script:
+    - export TRIVY_VERSION=$(wget -qO - "https://api.github.com/repos/aquasecurity/trivy/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    - echo $TRIVY_VERSION
+    - wget --no-verbose https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz -O - | tar -zxvf -
+  allow_failure: true
+  script:
+    # Fail on severe vulnerabilities
+    - ./trivy --exit-code 1 --ignore-unfixed --no-progress --input image-develop
+
+#----------------------------------------------------
+#      Criação do Merge - Develop --> Staging
+#----------------------------------------------------
+merge-request-staging:
+  stage: Merge Request Staging
+  image: registry.gitlab.com/gitlab-automation-toolkit/gitlab-auto-mr
+  before_script: []
+  only:
+    - develop
+  script:
+    - gitlab_auto_mr -t staging -c WIP -d .gitlab/merge_request_templates/merge_request.md -s --use-issue-name --title 'DEPLOY STAGING'
+
+#----------------------------------------------------
+#           Estágio de Tag para Staging
+#----------------------------------------------------
+image-tag-staging:
+  stage: Staging
+  image: quay.io/buildah/stable:latest
+  only:
+    - staging
+  script:
+    # Login no registry (Docker Hub) da Itapoá
+    - buildah login -u $DOCKER_USER -p $DOCKER_PASSWORD docker.io
+    # Exporta a variável com o nome final da imagem
+    - export DOCKER_IMAGE="$DOCKER_REGISTRY/portoitapoa/$CONTAINER_NAME:staging-$CI_COMMIT_SHORT_SHA-$(date --utc +%Y%m%d%H%M%S)"
+    # Pull da imagem do cache para o container registry local
+    - buildah pull oci:image-develop:latest
+    # Tag da imagem
+    - buildah tag image-develop:latest $CONTAINER_NAME
+    # Envio da imagem para o registry (Docker Hub)
+    - buildah push --format=v2s2 --creds=$DOCKER_USER:$DOCKER_PASSWORD $CONTAINER_NAME docker://$DOCKER_IMAGE
+    # Tagueamento da imagem para o cache e os subsequentes jobs
+    - buildah tag $CONTAINER_NAME image-staging:latest
+    # Conversão da imagem para o formato OCI para o tagueamento para production
+    - buildah push $CONTAINER_NAME oci:image-staging:latest
+  environment:
+    name: staging
+
+#----------------------------------------------------
+#      Criação do Merge - Staging --> Production
+#----------------------------------------------------
+merge-request-production:
+  stage: Merge Request Production
+  image: registry.gitlab.com/gitlab-automation-toolkit/gitlab-auto-mr
+  before_script: []
+  only:
+    - staging
+  script:
+    - gitlab_auto_mr -t master -c WIP -d .gitlab/merge_request_templates/merge_request.md -s --title 'DEPLOY TO MASTER'
+
+#----------------------------------------------------
+#           Estágio de Lint do Dockerfile de prod
+#----------------------------------------------------
+lint_dockerfile-production:
+  stage: Lint Dockerfile
+  image: hadolint/hadolint:latest-debian
+  only:
+    - master
+  allow_failure: true
+  script:
+    - hadolint --verbose src/main/docker/Dockerfile.native
+    # o retorno do hadolint será no própio log do pipeline do Gitlab
+
+
+#----------------------------------------------------
+#            Estágio de Build da Imagem de Prod
+#----------------------------------------------------
+image-build-production:
+  stage: Production
+  image: quay.io/buildah/stable:latest
+  when: manual
+  only:
+    - master
+  script:
+    # Login no registry (Docker Hub) da Itapoá
+    - buildah login -u $DOCKER_USER -p $DOCKER_PASSWORD docker.io
+    # Exporta a variável com o nome final da imagem
+    - export DOCKER_IMAGE="$DOCKER_REGISTRY/portoitapoa/$CONTAINER_NAME:production-$CI_COMMIT_SHORT_SHA-$(date --utc +%Y%m%d%H%M%S)"
+    # Build da imagem
+    - buildah bud --format=docker -f $DOCKERFILE_PROD -t $CONTAINER_NAME .
+    # Envio da imagem para o registry (Docker Hub)
+    - buildah push --creds=$DOCKER_USER:$DOCKER_PASSWORD $CONTAINER_NAME docker://$DOCKER_IMAGE
+  environment:
+    name: production

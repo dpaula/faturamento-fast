@@ -1,0 +1,11 @@
+#!/bin/bash
+if [ "$#" -eq 0 ]; then
+   echo "Por favor, passe a descrição da migration como parâmetro"
+   exit 1
+fi
+# Substitui todos os parâmetros do script por uma única string concatenada
+DESCRIPTION="$(echo $@ | tr ' ' _)"
+# Gera uma timestamp legível para o número da versão
+TIMESTAMP="$(date -u +%Y%m%d%H%M%S)"
+# Cria o arquivo vazio no diretório de migrations
+touch "migration/V"$TIMESTAMP"__"$DESCRIPTION".xml"

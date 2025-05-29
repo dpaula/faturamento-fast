@@ -1,0 +1,103 @@
+server:
+  port: 2179
+  forward-headers-strategy: framework
+  servlet:
+    context-path: /
+  undertow:
+    accesslog:
+      prefix: "[FATURAMENTO-FAST]"
+
+eureka:
+  client:
+    enabled: false
+
+spring:
+  application:
+    name: 'faturamento-fast'
+  main:
+    banner-mode: 'off'
+    cloud-platform: kubernetes
+  security:
+    user:
+      name: admin
+      password: porto@123
+  output:
+    ansi:
+      enabled: 'always'
+  jpa:
+    show-sql: false
+    database-platform: org.hibernate.dialect.SQLServerDialect
+    hibernate:
+      ddl-auto: none
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    properties:
+      hibernate:
+        database: sql-server
+        dialect: org.hibernate.dialect.SQLServer2008Dialect
+        show_sql: false
+  
+  cloud:
+    kubernetes:
+      enabled: false
+      reload:
+        enabled: false
+      config:
+        enabled: false
+  kafka:
+    producer:
+      bootstrap-servers: localhost:29092
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+  
+  jmx:
+    enabled: false
+  datasource:
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    #    username: ${DATABASE_USERNAME}
+    #    password: ${DATABASE_PASSWORD}
+    
+    hikari:
+      minimumIdle: 5
+      maximumPoolSize: 20
+      idleTimeout: 120000
+      poolName: SpringBootJPAHikariCP
+      maxLifetime: 30000
+      connectionTimeout: 30000
+      leakDetectionThreshold: 30000
+  
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+
+kafka:
+  default-partitions: 6
+  default-replication-factor: 1
+  topics:
+    pre-register-imp:
+      name: PRE_REGISTRO_IMPO
+    pre-register-exp:
+      name: PRE_REGISTRO_EXPO
+    cabotagem-import:
+      name: CABOTAGEM-IMPORT
+
+
+logging:
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %logger{1}: %msg%n'
+  level:
+    root: INFO
+
+##SECURITY
+#jwt:
+#  config:
+#    privateKey: ${JWT_PRIVATE_KEY}
+
+info:
+  app:
+    name: '@project.name@'
+    description: '@project.description@'
+    version: '@project.version@'
+    encoding: '@project.build.sourceEncoding@'
+    java:
+      version: '@java.version@'
